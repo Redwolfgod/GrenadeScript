@@ -1,0 +1,151 @@
+local tool = script.Parent
+local plyr = tool.Parent.Parent
+local char = plyr.Character
+local models = game.ReplicatedStorage.Models
+local remotes = game.ReplicatedStorage.Remotes
+local animations = game.ReplicatedStorage.Animations.Grenade
+local debounce = false
+local isEquipped = false
+local ContentProvider = game:GetService("ContentProvider")
+local grenadepart = models.Utility.GrenadeModel.grenade
+
+tool.Equipped:Connect(function()
+	if char:FindFirstChild("GrenadeModel") == nil then
+		if char:FindFirstChild("GrenadeCheck").Value == false then
+			local grenadecheck = char:FindFirstChild("GrenadeCheck")
+			grenadecheck.Value = true
+			local pullanim = char.Humanoid:LoadAnimation(animations.grenadepull)
+			local idleanim = char.Humanoid:LoadAnimation(animations.grenadeidle)
+			idleanim:Stop()
+			ContentProvider:PreloadAsync({animations.grenadepull})
+			pullanim:Play()
+			task.wait(0.45)
+			local grenade = models.Utility.GrenadeModel:Clone()
+			grenade.Parent = char
+			grenade.grenade.backpackruffle:Play()
+			local weld = Instance.new("Weld")
+			weld.Parent = char.GrenadeModel
+			weld.Name = "grenadeweld"
+			weld.Part0 = char:FindFirstChild("Right Arm")
+			weld.Part1 = grenade.grenade
+			weld.C0 = CFrame.new(0, -1, 0) * CFrame.Angles(0,0,math.rad(90))
+			weld.C1 = CFrame.new(0, -0.4, 0)
+			task.wait(pullanim.Length - 0.45)
+			grenadecheck.Value = false
+			isEquipped = true
+			idleanim:Play()
+			local idle = char.Humanoid:LoadAnimation(animations.grenadeidle)
+			if not char:FindFirstChild("Grenade") then
+				char:FindFirstChild("GrenadeModel"):Destroy()
+				for i,v in pairs(char.Humanoid:GetPlayingAnimationTracks()) do
+					if v.Animation.AnimationId == animations.grenadeidle.AnimationId then
+						v:Stop()
+					end
+				end
+			end
+		end
+	end
+end)
+
+tool.Unequipped:Connect(function()
+	if char:FindFirstChild("GrenadeModel") then
+		if char:FindFirstChild("GrenadeCheck").Value == false then
+			char:FindFirstChild("GrenadeModel"):Destroy()
+			isEquipped = false
+			for i,v in pairs(char.Humanoid:GetPlayingAnimationTracks()) do
+				if v.Animation.AnimationId == animations.grenadeidle.AnimationId then
+					v:Stop()
+				end
+			end
+		end
+	end
+end)
+
+remotes.playerinput.OnServerEvent:Connect(function(player,mousepos)
+	if isEquipped then
+		if player == plyr then
+			if char:FindFirstChild("GrenadeCheck").Value == false then
+				if char:FindFirstChild("GrenadeModel") then
+					local grenadecheck = char:FindFirstChild("GrenadeCheck")
+					grenadecheck.Value = true
+					local grenade = char:FindFirstChild("GrenadeModel")
+					local grenader = grenade:FindFirstChild("grenade")
+					local grenadefull = char.Humanoid:WaitForChild("Animator"):LoadAnimation(animations.grenadefull)
+					ContentProvider:PreloadAsync({animations.grenadefull})
+					grenadefull:Play()
+					
+					grenader.pinpull:Play()
+					task.wait(1.46)
+					remotes.clientrequester:FireClient(player)
+					
+					remotes.clientrequester.OnServerEvent:Connect(function(player,lookmousevector)
+						local grenademodelclone = grenade:Clone()
+						local grenademeshclone = grenademodelclone:FindFirstChild("grenade")
+						local grenadepos = grenade:FindFirstChild("grenade").Position
+						grenademeshclone.Position = grenadepos
+						grenademodelclone.Parent = char
+						grenademodelclone:FindFirstChild("grenadeweld"):Destroy()
+						grenade:Destroy()
+						local humanoidlook = char.HumanoidRootPart.CFrame.LookVector
+						local cameravector = Vector3.new(humanoidlook.X,(math.sin(lookmousevector)), humanoidlook.Z)
+						grenademeshclone.Velocity = cameravector * 80
+						grenademeshclone.CanCollide = true
+						grenademodelclone.Parent = game.Workspace
+						tool:Destroy()
+						task.wait(0.49)
+
+						for i,v in pairs(char.Humanoid:GetPlayingAnimationTracks()) do
+							if v.Animation.AnimationId == animations.grenadeidle.AnimationId then
+								v:Stop()
+							end
+						end
+						grenadecheck.Value = false
+						task.wait(2)
+						grenademeshclone.Attachment.fire:Emit(30)
+						grenademeshclone.Attachment.smoke:Emit(70)
+						grenademeshclone.explosion:Play()
+						grenademeshclone.Transparency = 1
+						local shrapnelcount = 360
+						local list = {}
+						for i,v in pairs(game.Players:GetPlayers()) do
+							if v.Character.Humanoid and not table.find(list, v.Character) then
+								table.insert(list, v.Character)
+							end
+						end
+						local params = OverlapParams.new(list,Enum.RaycastFilterType.Whitelist,20,"Default")
+						local objects = workspace:GetPartBoundsInRadius(grenademeshclone.Position, 8, params)
+						print(objects)
+						local overlaplist = {}
+						for i,v in pairs(objects) do
+							if v.Parent:FindFirstChildWhichIsA("Humanoid") and not table.find(overlaplist,v.Parent) then
+								table.insert(overlaplist, v.Parent)
+								v.Parent.Humanoid:TakeDamage(100)
+							end
+						end
+						if list ~= nil then
+							local raycastparams = RaycastParams.new()
+							raycastparams.FilterDescendantsInstances = list
+							raycastparams.FilterType = Enum.RaycastFilterType.Whitelist
+							raycastparams.IgnoreWater = true
+							for i = shrapnelcount, 0, -10 do
+								local origin = grenademeshclone.Position
+								local x = 30 * math.cos(math.rad(i))
+								local y = math.random(4,10)
+								local z = 30 * math.sin(math.rad(i))
+								local direction = Vector3.new(x, y, z)
+								local raycastresult = workspace:Raycast(origin,direction,raycastparams)
+								if raycastresult and raycastresult.Instance.Parent:FindFirstChild("Humanoid") then
+									local damage = math.random(26,45)
+									raycastresult.Instance.Parent.Humanoid:TakeDamage(damage)
+								end
+							end
+						end
+						task.wait(5)
+
+						grenademodelclone:Destroy()
+					end)
+				end
+			end
+		end
+	end
+end)
