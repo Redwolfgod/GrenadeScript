@@ -1,0 +1,40 @@
+local remotes = game.ReplicatedStorage.Remotes
+local gear = game.ReplicatedStorage.Models.Gear
+local preload = game:GetService("ContentProvider")
+
+game:GetService("Players").PlayerAdded:Connect(function(player)
+	player.CharacterAppearanceLoaded:Connect(function(char)
+		local grenadecheck = Instance.new("BoolValue")
+		grenadecheck.Parent = char
+		grenadecheck.Value = false
+		grenadecheck.Name = "GrenadeCheck"
+		local revolvercheck = Instance.new("BoolValue")
+		revolvercheck.Parent = char
+		revolvercheck.Value = false
+		revolvercheck.Name = "RevolverCheck"
+		local check = char:GetChildren()
+		for i,v in pairs(check) do
+			if v:IsA("Accessory") then
+				if v.AccessoryType ~= Enum.AccessoryType.Hair and v.AccessoryType ~= Enum.AccessoryType.Face and v.AccessoryType ~= Enum.AccessoryType.Hat then
+					v:Destroy()
+				end
+			end
+		end
+		local Sack = gear.Bag.Sack:Clone()
+		local Strap = gear.Bag.Straps:Clone()
+		Sack.Parent = char
+		Strap.Parent = char
+		local weld = Instance.new("Weld")
+		weld.Name = "weldsack"
+		weld.Parent = Sack
+		local weldstrap = weld:Clone()
+		weldstrap.Parent = Sack
+		weldstrap.Name = "weldstrap"
+		weld.Part0 = char:FindFirstChild("Torso")
+		weldstrap.Part0 = char:FindFirstChild("Torso")
+		weld.Part1 = Sack
+		weldstrap.Part1 = Strap
+		weld.C0 = CFrame.new(0.058, -0.105, 0.765) * CFrame.Angles(0,math.rad(180),0)
+		weldstrap.C0 = CFrame.new(0.012, 0.275, 0.051) * CFrame.Angles(0,math.rad(180),0)
+	end)
+end)
