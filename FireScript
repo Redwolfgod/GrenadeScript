@@ -1,0 +1,85 @@
+local proximityPrompt = game.Workspace.FireBase.HitDetector.ProximityPrompt
+rs = game.ReplicatedStorage
+timeleft = rs.TimeLeft
+minutes = rs.Minutes
+seconds = rs.Seconds
+local cooldown = false
+local gameStarted = game.ReplicatedStorage:FindFirstChild("IfGameStarted")
+local sounds = rs.Sounds
+
+proximityPrompt.Triggered:Connect(function(player)
+	if timeleft.Value ~= 0 then
+		local char = player.Character
+		local fire = game.Workspace.FireFolder.FirePart
+		if char:FindFirstChild("LeftArmWeld") then
+			char:FindFirstChild("LeftArmWeld"):Destroy()
+			char:FindFirstChild("RightArmWeld"):Destroy()
+			timeleft.Value = timeleft.Value + 20
+			fire.FireEruption.Volume = timeleft.Value / 8
+			fire.FireEruption:Play()
+			task.wait(0.5)
+			char:FindFirstChild("woodenStick"):Destroy()
+			char:FindFirstChild("woodenStick"):Destroy()
+			local stickcount = char:FindFirstChild("StickCountValue")
+			stickcount.Value = 0
+		elseif char:FindFirstChild("RightArmWeld") then
+			char:FindFirstChild("RightArmWeld"):Destroy()
+			timeleft.Value = timeleft.Value + 10
+			fire.FireEruption.Volume = timeleft.Value / 12
+			fire.FireEruption:Play()
+			task.wait(0.5)
+			char:FindFirstChild("woodenStick"):Destroy()
+			local stickcount = char:FindFirstChild("StickCountValue")
+			stickcount.Value = 0
+		end
+	end
+end)
+
+rs.GameStartedEvent.OnServerEvent:Connect(function(plyr, value)
+	local fire = game.Workspace.FireFolder.FirePart
+	if value == "true" then
+		local pieces = game.Workspace.WoodPieces:GetChildren()
+		for i,v in pairs(pieces) do
+			v:Destroy()
+		end
+		rs.IfGameStarted.Value = true
+		rs:WaitForChild("Clock").Value = 360
+		print("remotefire")
+		game.ReplicatedStorage.TimeLeft.Value = 55
+		game:GetService("Lighting").ClockTime = 18
+		sounds.NightTimeAmbience:Play()
+		fire.FireSound:Play()
+		fire.Fire.Enabled = true
+	else
+		rs.IfGameStarted.Value = false
+		sounds.NightTimeAmbience:Stop()
+		fire.FireSound:Stop()
+	end
+end)
+
+game.ReplicatedStorage.TimeLeft.Value = 55
+
+while true do 
+	if timeleft.Value ~= 0 then
+		if gameStarted.Value == true then
+			local fire = game.Workspace.FireFolder.FirePart
+			timeleft.Value = timeleft.Value - 1
+			minutes.Value  = math.floor(timeleft.Value / 60)
+			seconds.Value = math.floor(timeleft.Value % 60)
+			fire.Fire.Size = math.floor(timeleft.Value / 3)
+			fire.FireSound.Volume = timeleft.Value / 8
+		end
+	end
+
+	if timeleft.Value == 0 and gameStarted.Value == true then
+		local list = game.Players:GetPlayers()
+		local fire = game.Workspace.FireFolder.FirePart
+		fire.Fire.Enabled = false
+		fire.FireSound:Stop()
+		for i,v in pairs(list) do
+			v.Character:FindFirstChild("Humanoid"):TakeDamage(10)
+		end
+		task.wait(1.5)
+	end
+	task.wait(1)
+end
