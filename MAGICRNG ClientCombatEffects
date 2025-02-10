@@ -1,0 +1,129 @@
+local CombatEffects = {CE = {}}
+CombatEffects.__index = CombatEffects
+
+type InfoTable = {
+	effectTime: number,
+	effectValue: boolean,
+	effectDebug: boolean,
+}
+
+function CombatEffects.new()
+	local effectTable = setmetatable({
+		Run = false;
+		RunCD = false;
+		Block = false;
+		BlockCD = false;
+		HitStun = false;
+		HitCD = false;
+		Rush = false;
+		RushCD = false;
+		Dash = false;
+		DashCD = false;
+		CritCD = false;
+		JumpCD = false;
+		Stun = false;
+		Ragdoll = false;
+		_RunningPromises = {};
+		_Trove = _G.Trove.new()
+	}, CombatEffects)
+	
+	return effectTable
+end
+
+--Conditional Checkers
+
+function CombatEffects:CheckEffect(effectName : string)
+	if typeof(effectName) ~= "string" then warn("Passed type is not a string") return end
+	if self[effectName] == nil then warn("Effect does not exist in effect table") return end
+	return true
+end
+
+function CombatEffects:CheckTime(effectTime : number)
+	if typeof(effectTime) ~= "number" then warn("Passed type is not a number") return end
+	if not self._RunningPromises then warn("Promise container not found in effect table") return end
+	return true
+end
+
+function CombatEffects:AddPromise(effectName : string, promiseThread)
+	if not self._RunningPromises then warn("Promise container not found in effect table") return end
+	if self._RunningPromises[effectName] then return end
+	self._RunningPromises[effectName] = _G.Promise.try(promiseThread)
+end
+
+function CombatEffects:GetPromise(effectName : string)
+	if not self._RunningPromises then warn("Promise container not found in effect table") return end
+	return self._RunningPromises[effectName]
+end
+
+function CombatEffects:RemovePromise(effectName : string)
+	if not self._RunningPromises[effectName] then warn("Running promise not found for called effect") return end
+	self._RunningPromises[effectName] = nil;
+end
+
+--Effect Functions
+
+
+function CombatEffects:ToggleEffect(effectName : string, effectInfo : InfoTable?)
+	if not getmetatable(self) then warn("Passed object is not a metatable") return end
+	if not self:CheckEffect(effectName) then return end
+	local effectTime = effectInfo and effectInfo.effectTime
+	local effectValue = effectInfo and effectInfo.effectValue
+	local effectDebug = effectInfo and effectInfo.effectDebug
+	if effectInfo.effectDebug then print("Effect Name is:", effectName) end
+	if effectTime and self:CheckTime(effectTime) then
+		_G.Promise.try(function()
+			local function promiseThread()
+				return _G.Promise.new(function(resolve, reject, onCancel)
+					self[effectName] = effectValue or not self[effectName]
+					if effectInfo.effectDebug then print("Effect Value Before is:", self[effectName]) end
+					resolve(self[effectName])
+					onCancel(function()
+						if effectInfo.effectDebug then print("canceled for effect:", effectName) end
+						self:RemovePromise(effectName)
+						self[effectName] = not effectValue
+					end)
+				end):andThen(function(effectState)
+					return _G.Promise.delay(effectTime):finally(function()
+						self[effectName] = not effectValue
+						if effectInfo.effectDebug then print("Effect Value After is:", self[effectName]) end
+						self:RemovePromise(effectName)
+					end):catch(function(err)
+						print("Function has rejected with error:", err)
+					end)
+				end)
+			end
+			self:AddPromise(effectName, promiseThread)
+		end)
+	end
+	if not effectTime then if effectDebug then print("Switched effect:", self[effectName], "To value:", effectValue) end self[effectName] = effectValue end
+end
+
+function CombatEffects:CancelEffect(effectName)
+	if not self:CheckEffect(effectName) then return end
+	local foundPromise = self:GetPromise(effectName)
+	if foundPromise then
+		foundPromise:cancel()
+	end
+end
+
+CombatEffects.Stun = function(dataType)
+	_G.RemoteResponses.CancelRun()
+end
+
+CombatEffects.HitStun = function(dataType)
+	_G.RemoteResponses.CancelRun()
+end
+
+CombatEffects.Block = function(dataType)
+	_G.RemoteResponses.CancelRun()
+end
+
+CombatEffects.DashCD = function(dataType)
+	_G.RemoteResponses.Dash()
+end
+
+CombatEffects.RushCD = function(dataType)
+	_G.RemoteResponses.Rush()
+end
+
+return CombatEffects
