@@ -1,0 +1,908 @@
+local module = {}
+
+local effects = {
+	Stun = false;
+	HitStun = false;
+	Ragdoll = false;
+	Knockback = false;
+	HitNumber = 1;
+	ModeBar = 0;
+	EndChainStuned = false;
+	Block = false;
+	BlockCooldown = false;
+	MoveOneCooldown = false;
+	MoveTwoCooldown = false;
+	MoveOneDuration = false;
+	MoveTwoDuration = false;
+	MoveMagicCritDuration = false;
+	MoveMagicCritCooldown = false;
+	AttemptBlock = false;
+	AttemptRun = false;
+	Run = false;
+	RunCooldown = false;
+	Burning = false;
+	Frost = false;
+	VolcanicEruption = false;
+	Dash = false;
+	HitboxSpawned = false;
+	HyperArmor = false;
+	IsFKeyHeld = false;
+	IFrames = false;
+	Target = nil;
+	CritHyperArmor = false;
+	CantJump = false;
+	Crit = false;
+	HitCounter = 0;
+	Grab = false;
+	SpecialCrit = false;
+	IsRunKeyHeld = false;
+	DeepFreeze = false;
+	PlayerChar = nil;
+	Rush = false;
+	ZToggled = false;
+	DirectionalKeys = {};
+	Direction = "s";
+	LastProjectileCFrame = nil;
+}
+
+module.NoActionEffects = function(userKey)
+	local E = module[userKey].Effects
+	if not E.Grab and not E.DeepFreeze and not E.Ragdoll then return false else return true end
+end
+
+module.ResetTimers = function(userKey)
+	if _G.Timers then
+		if _G.Timers[tonumber(userKey)] then
+			_G.Timers[tonumber(userKey)] = nil
+		end
+	end
+	module.SetUpEffects(tonumber(userKey))
+end
+
+module.GetPlayerChar = function(userKey)
+	local player = _G.plrs:GetPlayerByUserId(userKey)
+	if not player then
+		for _,char in pairs(game.workspace.Live:GetChildren()) do
+			local npcID = char:GetAttribute("NPCID")
+			if npcID then
+				if npcID == userKey then
+					return char
+				end
+			end
+		end
+	end
+	return player
+end
+
+module.CheckEffects = function(userKey)
+	local userEffects = module[userKey].Effects
+	for i,v in pairs(userEffects) do
+		if effects[i] == nil then
+			userEffects[i] = nil
+		end
+		
+		if typeof(v) ~= "boolean" and i ~= "HitNumber" and i ~= "ModeBar" and i ~= "Target" and i ~= "LastProjectileCFrame" and i ~= "HitCounter" and i ~= "PlayerChar" then
+			if effects[i] ~= nil then
+				userEffects[effects[i]] = false
+			else
+				userEffects[i] = nil
+			end
+		end
+	end
+end
+
+module.SetUpEffects = function(userKey)
+	if not module[userKey] then
+		module[userKey] = {}
+		module[userKey].Effects = {}
+		for i,v in pairs(effects) do
+			module[userKey].Effects[i] = v
+		end
+		module.CheckEffects(userKey)
+	end
+end
+
+module.RemoveUserKey = function(userKey)
+	if module[userKey] then
+		table.remove(module, table.find(module, userKey))
+	end
+end
+
+module.HitboxSpawn = function(userKey, spawnTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.damageType = info.damageType or "Fist"
+	info.Overide = info.Overide or false
+	info.Crit = info.Crit or false
+	info.SpecialCrit = info.SpecialCrit or false
+	info.CritHyperArmor = info.CritHyperArmor or false
+	info.MovesForward = info.MovesForward or false
+	info.MoveForwardStrength = info.MoveForwardStrength or 0
+	info.MoveForwardTime = info.MoveForwardTime or 0
+	info.MoveForwardOveridesHyper = info.MoveForwardOveridesHyper or false
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.Overide and not effects.HyperArmor and not effects.CritHyperArmor then
+		timer["Timer"..name]:Stop()
+		effects.HitboxSpawned = false
+		timer["Timer"..name] = nil
+	end
+
+	if effects.HitboxSpawned == false and not info.Overide and not effects.CritHyperArmor then
+		effects.HitboxSpawned = true
+		if info.CritHyperArmor then
+			_G.Base:FireAllClients({type = "CritHighlight", subType = "Create", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "CritHyperArmor"})
+			effects.CritHyperArmor = true 
+		end
+		if info.signal then info.signal:Invoke("StartFire") end
+		if info.MovesForward then
+			local hitChars, hitbox = _G.HitboxHandler.HitHandler(info.player, userKey, info.specifications)
+			if hitChars then
+				_G.CombatEffects.GiveKnockback(userKey, info.MoveForwardTime, info.MoveForwardStrength, playerChar, "KnockBack", {OverideHyper = info.MoveForwardOveridesHyper})
+			end
+		end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = spawnTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		if not info.Crit then _G.CombatEffects.HitNumberHandler(userKey, _G.CombatValues.ResetM1Time, "ResetM1Chain", {signal = (info.passSignal and info.signal) or nil}) end
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			if not info.SpecialCrit then
+				local hitChars, hitbox = _G.HitboxHandler.HitHandler(info.player, userKey, info.specifications)
+				if hitChars then
+					local char = playerChar:FindFirstChildWhichIsA("BasePart") and playerChar or playerChar.Character
+					if info.Crit and not playerChar:FindFirstChildWhichIsA("BasePart") then _G.Base:FireClient(playerChar, {type = "Highlight", subType = "CreateFrame", spawnTime = _G.CombatValues.CritImpactFrameSpawnTime}) end
+					_G.Promise.try(function()
+						_G.AnimationLoader.Animate(char, "Crit", "AdjustSpeed", _G.AnimationLoader[char]["Crit"].Length / _G.CombatValues.CritImpactSpeed)
+						task.wait(_G.CombatValues.CritImpactFrameSpawnTime)
+						_G.AnimationLoader.Animate(char, "Crit", "AdjustSpeed", _G.AnimationLoader[char]["Crit"].Length / _G.CombatValues.CritDuration)
+					end)
+					_G.DamageHandler.DamageSetup(info.player, hitChars, not info.Crit and info.damageType or "Crit"..info.damageType, {hitbox = hitbox, m1Number = info.m1Number})
+				end
+			end
+			if info.SpecialCrit then
+				if info.Crit and info.signal then info.signal:Invoke("EndSpecialCrit") end
+				_G.Base:FireAllClients({type = "CritHighlight", subType = "Destroy", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "CritHyperArmor"})
+				if info.CritHyperArmor then effects.CritHyperArmor = false end
+			end
+			effects.HitboxSpawned = false
+		end)
+	end
+end
+
+module.HitNumberHandler = function(userKey, resetTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	local hitNumber = _G.CombatEffects[userKey].Effects["HitNumber"]
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.Overide = info.Overide or false
+	
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.Overide then
+		timer["Timer"..name]:Stop()
+		if _G.CombatEffects[userKey].Effects["HitNumber"] ~= 1 then _G.CombatEffects[userKey].Effects["HitNumber"] = 1 end
+		timer["Timer"..name] = nil
+	end
+	
+	if _G.CombatEffects[userKey].Effects["HitNumber"] <= 4 and not info.Overide then
+		local isTimer = _G.Timers[userKey]["Timer"..name]
+		if isTimer then
+			if not isTimer["isFinished"] then
+				local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+				timer["Timer"..name]:Stop()
+			end
+		end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = resetTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		if info.signal then info.signal:Invoke("EndSwing") end
+		_G.CombatEffects[userKey].Effects["HitNumber"] += 1
+		if timer["Timer"..name] then 
+			timer["Timer"..name].Counted.Invoked:Connect(function()
+				_G.CombatEffects[userKey].Effects["HitNumber"] = 1
+				timer["Timer"..name] = nil
+			end)
+		end
+	end
+end
+
+module.GiveCritCooldown = function(userKey, critTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.stunOveride = info.stunOveride or false
+
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.stunOveride then
+		timer["Timer"..name]:Stop()
+		effects.Crit = false
+		timer["Timer"..name] = nil
+	end
+	if effects.Crit == false and not info.stunOveride then
+		effects.Crit = true
+		_G.Tools.NewTimer({player = playerChar, name = name, time = critTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			effects.Crit = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+
+module.GiveKnockback = function(userKey, knockBackTime, strength, attacker, name, additionalInfo)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	if not additionalInfo then additionalInfo = {} end
+	additionalInfo.Overide = additionalInfo.Overide or false
+	additionalInfo.OverideHyper = additionalInfo.OverideHyper or false
+	additionalInfo.CustomAttacker = additionalInfo.CustomAttacker or nil
+	additionalInfo.ScatterKnockback = additionalInfo.ScatterKnockback or false
+	additionalInfo.Pull = additionalInfo.Pull or false
+	additionalInfo.PullObject = additionalInfo.PullObject or nil
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and effects[name] == true and additionalInfo.Overide then
+		timer["Timer"..name].StartingTime = tick() + (knockBackTime)
+	end
+	
+	if effects.Knockback == false and _G.Tools.CheckTimer(playerChar, name, true) and (additionalInfo.OverideHyper and true or not effects.HyperArmor) then
+		local counter = _G.Tools.SetCounterMeta()
+		effects.Knockback = true     
+		_G.Tools.NewTimer({player = playerChar, name = name, time = knockBackTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		local char = (_G.Tools.HumanoidExists(playerChar)).Parent
+		local attackerChar = (_G.Tools.HumanoidExists(attacker)).Parent
+		local exclusions = _G.HitboxHandler.TouchHandlerFilter(char)
+		local touchHandler = _G.rep.VFXParts.Combat.TouchHandler
+		local bv = Instance.new("BodyVelocity") 
+		bv.MaxForce = Vector3.new(5e4,additionalInfo.gravity and 5e4 or 0,5e4)
+		bv.Velocity = not additionalInfo.ScatterKnockback and ((not additionalInfo.CustomAttacker and attackerChar["HumanoidRootPart"].CFrame.lookVector.Unit or additionalInfo.CustomAttacker.CFrame.lookVector.Unit) * strength) or ((char["HumanoidRootPart"].Position - attackerChar["HumanoidRootPart"].Position).Unit * strength)
+		bv.Velocity = bv.Velocity + Vector3.new(0, additionalInfo.upwardsForce, 0)
+		bv.Parent = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+		game.Debris:AddItem(bv,knockBackTime)
+		task.defer(function()
+			if not effects.Ragdoll then 
+				local bodyGyro = _G.rep.BodyGyro:Clone()
+				bodyGyro.Parent = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+				game.Debris:AddItem(bodyGyro, knockBackTime)
+			end
+		end)
+		
+		local player = game.Players:GetPlayerByUserId(userKey)
+		local hum = char:FindFirstChildWhichIsA("Humanoid")
+		if hum then
+			if player then
+				_G.Base:FireClient(player, {type = "FixRagdoll", disable = false})
+			else
+				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			end
+		end
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			if additionalInfo.Pull and additionalInfo.PullObject then
+				if strength > 100 then strength = 100 end
+				bv.Velocity = ((additionalInfo.PullObject.Position - char["HumanoidRootPart"].Position)/(strength / 10))
+			end
+			if additionalInfo.friction then
+				bv.Velocity = bv.Velocity - ((attackerChar["HumanoidRootPart"].CFrame.lookVector.Unit * strength * additionalInfo.friction) * timer["Timer"..name].Delta)
+			end
+			if additionalInfo.gravity then
+				bv.Velocity = bv.Velocity - (Vector3.new(0, additionalInfo.gravityStrength or 9.81, 0) * timer["Timer"..name].Delta)
+			end
+			--local touchedParts = _G.HitboxHandler.TouchHitboxer(char, char["HumanoidRootPart"].CFrame, touchHandler.Size, {FilteredParts = exclusions})
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			effects.Knockback = false
+			local hum = char:FindFirstChildWhichIsA("Humanoid")
+			if hum then
+				if player then
+					_G.Base:FireClient(player, {type = "FixRagdoll", disable = false})
+				else
+					hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+					hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+				end
+			end
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+												--{speed = 1, stunOveride = true}
+module.GiveStun = function(userKey, stunTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	if not info then info = {} end
+	info.stunOveride = info.stunOveride or false
+	info.speed = info.speed or _G.CombatValues.StunSpeed
+	_G.Tools.CheckTimer(playerChar, name, true)
+	
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.stunOveride then
+		timer["Timer"..name]:Stop()
+		effects.Stun = false
+		timer["Timer"..name] = nil
+	end
+	if not timer["Timer"..name] then
+		effects.Stun = true
+		if playerChar:IsA("Player") then _G.Base:FireClient(playerChar, {type = "AddEffect", effectName = "Stun", effectTime = stunTime, effectValue = true, effectOveride = true}) end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = stunTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			local hum = _G.Tools.HumanoidExists(playerChar)
+			hum.WalkSpeed = 16
+			effects.Stun = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.returnInfoChar = function(info, playerChar, userKey)
+	info.player = info.player or _G.plrs:GetPlayerFromCharacter(playerChar) or _G.plrs:GetPlayerByUserId(userKey) or playerChar
+	if playerChar:FindFirstChild("Backpack") then
+		info.char = _G.Tools.ReturnCharacter(info.player) or _G.plrs:GetPlayerByUserId(userKey).Character
+	else
+		info.char = playerChar
+	end
+	return info
+end
+
+module.GiveBurn = function(userKey, burnTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	local counter = _G.Tools.SetCounterMeta()
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info = module.returnInfoChar(info, playerChar, userKey)
+	info.Overide = info.Overide or false
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.Overide then
+		timer["Timer"..name]:Stop()
+		effects.Burning = false
+		timer["Timer"..name] = nil
+	end
+	if effects.Burning == false then
+		effects.Burning = true
+		local weld
+		_G.Tools.NewTimer({player = playerChar, name = name, time = burnTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			counter.add(timer["Timer"..name].Delta)
+			if not info.char:FindFirstChild("BurnWeld") then weld = _G.FireScript.StartBurn(info.char, info.player, userKey) end
+			if counter.getValue() >= _G.CombatValues.BurnApplyTime then
+				counter.resetValue()
+				local hum = info.char:FindFirstChildWhichIsA("Humanoid"); if not hum then return end
+				_G.DamageHandler.TakeStunAnimationDamage(hum, _G.CombatValues.BurnDamage)
+				_G.SFXHandler.PlaySoundEffect(hum.Parent:FindFirstChildWhichIsA("BasePart"), "Burn")
+			end
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			if effects.Burning then effects.Burning = false _G.FireScript.StopBurn(info.char, weld) end
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.GiveHitStun = function(userKey, stunTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.stunOveride = info.stunOveride or false
+	
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.stunOveride then
+		timer["Timer"..name]:Stop()
+		effects.HitStun = false
+		timer["Timer"..name] = nil
+	end
+	
+	if effects.HitStun == false then
+		effects.HitStun = true
+		if playerChar:IsA("Player") then _G.Base:FireClient(playerChar, {type = "AddEffect", effectName = "HitStun", effectTime = stunTime, effectValue = true, effectOveride = true}) end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = stunTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			effects.HitStun = false
+		end)
+	end
+end
+
+module.GiveIFrames = function(userKey, iFrameTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.Overide = info.Overide or false
+
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.Overide then
+		timer["Timer"..name]:Stop()
+		effects.IFrames = false
+		timer["Timer"..name] = nil
+	end
+
+	if effects.IFrames == false then
+		effects.IFrames = true
+		_G.Tools.NewTimer({player = playerChar, name = name, time = iFrameTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			effects.IFrames = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.GiveBlockCooldown = function(userKey, blockTime, name)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+
+	if effects.BlockCooldown == false then
+		task.spawn(function()
+			effects.BlockCooldown = true
+			task.wait(blockTime)
+			effects.BlockCooldown = false
+		end)
+	end
+end
+
+module.BlockChecker = function(userKey, blockDelayTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+
+	if effects.AttemptBlock == false then
+		effects.AttemptBlock = true
+		_G.Tools.NewTimer({player = playerChar, name = name, time = blockDelayTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		local char = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			if timer["Timer"..name].TimeRemaining <= (2 * (timer["Timer"..name].Delta)) then
+				if effects.IsFKeyHeld then
+					if not effects.Block and not effects.BlockCooldown and not effects.Stun and not effects.HitStun then _G.CombatScripts.AttemptBlocking(playerChar, userKey) end
+					if char:FindFirstChildWhichIsA("Humanoid") and effects.Block then char:FindFirstChildWhichIsA("Humanoid").WalkSpeed = _G.CombatValues.BlockSpeed end
+					if (effects.Stun or effects.HitStun) and not effects.BlockCooldown then _G.CombatScripts.EndBlocking(playerChar, userKey) end
+					timer["Timer"..name].StartingTime = tick() + (timer["Timer"..name].Delta)
+				end
+			end
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			_G.CombatScripts.EndBlocking(playerChar, userKey)
+			if char:FindFirstChildWhichIsA("Humanoid") then task.defer(function() char:FindFirstChildWhichIsA("Humanoid").WalkSpeed = 16 end) end
+			effects.AttemptBlock = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.RunChecker = function(userKey, runDelayTime, name, info)
+	
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+
+	if effects.AttemptRun == false then
+		effects.AttemptRun = true
+		_G.Tools.NewTimer({player = playerChar, name = name, time = runDelayTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		local char = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			if timer["Timer"..name].TimeRemaining <= (2 * (timer["Timer"..name].Delta)) then
+				if effects.IsRunKeyHeld then
+					if not effects.Run and not effects.Stun and not effects.RunCooldown and not effects.HitStun then _G.CombatScripts.AttemptRun(playerChar, userKey) end
+					if char:FindFirstChildWhichIsA("Humanoid") and effects.Run then char:FindFirstChildWhichIsA("Humanoid").WalkSpeed = _G.CombatValues.RunSpeed end
+					if (effects.Stun or effects.HitStun or effects.Block) and effects.Run then _G.CombatScripts.EndRun(playerChar, userKey) end
+					timer["Timer"..name].StartingTime = tick() + (timer["Timer"..name].Delta)
+				end
+			end
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			_G.CombatScripts.EndRun(playerChar, userKey)
+			if char:FindFirstChildWhichIsA("Humanoid") then task.defer(function() char:FindFirstChildWhichIsA("Humanoid").WalkSpeed = 16 end) end
+			effects.AttemptRun = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.GiveRunCooldown = function(userKey, blockTime, name)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+
+	if effects.RunCooldown == false then
+		task.spawn(function()
+			effects.RunCooldown = true
+			task.wait(blockTime)
+			effects.RunCooldown = false
+		end)
+	end
+end
+
+module.GiveMoveMagicCritCooldown = function(userKey, magicCritCooldown, name)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+
+	if effects.MoveMagicCritCooldown == false then
+		task.spawn(function()
+			effects.MoveMagicCritCooldown = true
+			task.wait(magicCritCooldown)
+			effects.MoveMagicCritCooldown = false
+		end)
+	end
+end
+
+module.GiveDashCooldown = function(userKey, dashCooldown, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	if not info then info = {} end
+	info = module.returnInfoChar(info, playerChar, userKey)
+
+	if effects.Dash == false then
+		task.spawn(function()
+			effects.Dash = true
+			_G.CombatEffects.GiveIFrames(userKey, _G.CombatValues.DashIFrameTime, "IFrames", {Overide = true})
+			if effects.Burning then _G.CombatEffects.GiveBurn(userKey, _G.CombatValues.MinimizerEffect, "Burn", {player = info.player, Overide = true}) end
+			task.wait(dashCooldown)
+			effects.Dash = false
+		end)
+	end
+end
+
+module.GiveRagdoll = function(userKey, ragdollTime, name, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	_G.Tools.CheckTimer(playerChar, name, true)
+	if not info then info = {} end
+	info.Overide = info.Overide or false
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.Overide then
+		effects.Ragdoll = false
+		if info.humanoid and info.humanoid.Parent:FindFirstChildWhichIsA("BasePart") then
+			_G.RagdollScript.Ragdoll(info.humanoid.Parent, false)
+			local player = game.Players:GetPlayerByUserId(userKey)
+			if player then 
+				_G.Base:FireClient(player, {type = "FixRagdoll", disable = true}) 
+			else
+				info.humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+				info.humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+			end
+		end
+		timer["Timer"..name] = nil
+	end
+
+	if not timer["Timer"..name] and not effects.Ragdoll and effects.HyperArmor == false and not info.Overide then
+		effects.Ragdoll = true
+		if info.humanoid then
+			_G.RagdollScript.Ragdoll(info.humanoid.Parent, true) 
+			local player = game.Players:GetPlayerByUserId(userKey)
+			if player then
+				_G.Base:FireClient(player, {type = "AddEffect", effectName = "Ragdoll", effectTime = ragdollTime, effectValue = true, effectOveride = true})
+				_G.Base:FireClient(player, {type = "FixRagdoll", disable = false})
+			else
+				info.humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+				info.humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			end
+		else warn("Humanoid not found upon Ragdoll initiate") end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = ragdollTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			effects.Ragdoll = false
+			if info.humanoid and info.humanoid.Parent:FindFirstChildWhichIsA("BasePart") then
+				_G.RagdollScript.Ragdoll(info.humanoid.Parent, false)
+				_G.CombatEffects.GiveIFrames(userKey, _G.CombatValues.RagdollIFrameTime, "IFrames", {Overide = true})
+				info.humanoid.PlatformStand = true
+				local bodyGyro = _G.rep.BodyGyro:Clone()
+				bodyGyro.Parent = info.humanoid.Parent
+				game.Debris:AddItem(bodyGyro, 0.15)
+				local player = game.Players:GetPlayerByUserId(userKey)
+				if player then 
+					_G.Base:FireClient(player, {type = "FixRagdoll", disable = true})
+				else
+					info.humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+					info.humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+				end
+				task.spawn(function()
+					task.wait(0.2)
+					info.humanoid.PlatformStand = false
+				end)
+			end
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.ModeBarAdjust = function(userKey, amount, remove, reset)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	if not remove then
+		if effects.ModeBar >= 100 then return end
+		if effects.ModeBar + amount > 100 then effects.ModeBar = 100 else effects.ModeBar += amount end
+	elseif remove then
+		if effects.ModeBar == 0 then return end
+		if effects.ModeBar - amount < 0 then effects.ModeBar = 0 else effects.ModeBar -= amount end
+	end	
+	if userKey < 999999999999999 then
+		local player = game.Players:GetPlayerByUserId(userKey)
+		_G.Base:FireClient(player, {type = "UpdateModeBar", amount = effects.ModeBar})
+	end
+end
+
+module.GiveMoveOneCooldown = function(userKey, cdTime, name)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	
+	if effects.MoveOneCooldown == false then
+		_G.Promise.try(function()
+			effects.MoveOneCooldown = true
+			task.wait(cdTime)
+			effects.MoveOneCooldown = false
+		end)
+	end
+end
+
+module.GiveMoveTwoCooldown = function(userKey, cdTime, name) 
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	
+	if effects.MoveTwoCooldown == false then
+		_G.Promise.try(function()
+			effects.MoveTwoCooldown = true
+			task.wait(cdTime)
+			effects.MoveTwoCooldown = false
+		end)
+	end
+end
+
+--[[module.GiveGrabEffect = function(userKey, grabTime, name, grabbed, victimChar, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	if not info then info = {} end
+	info.Anchor = info.Anchor or false
+	info.HumRootAttach = info.HumRootAttach or false
+	info.C0Offset = info.C0Offset or CFrame.new(0,0,0)
+	info.C1Offset = info.C1Offset or CFrame.new(0,0,0)
+	info.OverideHyper = info.OverideHyper or false
+	info.FoundTable = info.FoundTable or {}
+	info.animGrabName = info.animGrabName or nil
+	info.startAnimationDelay = info.startAnimationDelay or 0.01
+	info.animGrabbedName = info.animGrabbedName or nil
+	info.AnimationStopWaitTime = info.AnimationStopWaitTime or 0.01
+	_G.Tools.CheckTimer(playerChar, name, true)
+	
+	if effects.Grab == false and (info.OverideHyper and true or not effects.HyperArmor) then
+		local attackerChar = playerChar:FindFirstChildWhichIsA("BasePart") and playerChar or playerChar.Character
+		if not grabbed and victimChar then
+			info.FoundTable = _G.GrabHandler.GrabInitiate(_G.plrs:GetPlayerByUserId(userKey), userKey, attackerChar, victimChar, info)
+			if info.FoundTable and info.FoundTable.victim then _G.CombatEffects.GiveGrabEffect((_G.Tools.GetUserId(info.FoundTable.victim) or info.FoundTable.victim:GetAttribute("NPCID")), grabTime, "Grab", true, nil, info) info.bindableEvent:Invoke("GrabFound") end
+			if not info.FoundTable then info.bindableEvent:Invoke("GrabCanceled") end
+		end
+		--if info.FoundTable and info.bindableEvent then info.bindableEvent:Invoke("GrabbedStarted") end
+		if info.FoundTable or grabbed then 
+			effects.Grab = true
+			_G.Tools.NewTimer({player = playerChar, name = name, time = grabTime})
+			local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+			if info.FoundTable and info.bindableEvent and not grabbed then info.bindableEvent:Invoke("GrabbedStarted") end
+			timer["Timer"..name].Counted.Invoked:Connect(function()
+				_G.GrabHandler.GrabRemove(playerChar:FindFirstChildWhichIsA("BasePart") and playerChar or playerChar.Character, info)
+				effects.Grab = false
+				if grabbed and info.bindableEvent then info.bindableEvent:Invoke("GrabbedFinished") end
+				timer["Timer"..name] = nil
+			end)
+		end
+	end
+end]]
+
+module.GiveStatusEffect = function(userKey, effectTime, name, bindableEvent, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	if effects[name] == nil then warn("Named effect does not exist in effects list, are you sure you properly named this?") return end
+	if not _G.CombatValues[name.."ApplyTime"] then warn("ApplyTime does not exist in effects list, are you sure this is listed?") return end
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	local counter = _G.Tools.SetCounterMeta()
+	if not info then info = {} end
+	info.ResetTime = info.ResetTime or false
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and effects[name] == true and info.ResetTime then
+		timer["Timer"..name].StartingTime = tick() + (effectTime)
+	end
+	
+	if effects[name] == false then
+		effects[name] = true
+		_G.Tools.NewTimer({player = playerChar, name = name, time = effectTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		if bindableEvent then bindableEvent:Invoke("EffectStart") end
+		counter.setValue(_G.CombatValues[name.."ApplyTime"])
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			counter.add(timer["Timer"..name].Delta)
+			if not _G.CombatValues[name.."ApplyTime"] then return end
+			if counter.getValue() >= (_G.CombatValues[name.."ApplyTime"] + timer["Timer"..name].Delta) then
+				if bindableEvent then bindableEvent:Invoke("EffectApply") end
+				counter.resetValue()
+			end
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			if bindableEvent then bindableEvent:Invoke("EffectEnd") end
+			effects[name] = false
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.GiveFrostEffect = function(userKey, effectTime, name, info)
+	local bindableEvent = _G.Signal.new()
+	module.SetUpEffects(userKey)
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	local effects = module[userKey].Effects
+	_G.CombatEffects.GiveStatusEffect(userKey, effectTime, "Frost", bindableEvent, {ResetTime = info.ResetTime})
+	local hum = _G.Tools.HumanoidExists(playerChar)
+	bindableEvent.Invoked:Connect(function(signalConnection)
+		if signalConnection == "EffectStart" then
+			
+		elseif signalConnection == "EffectApply" then
+			if hum and not effects.Stun and not effects.DeepFreeze then hum.WalkSpeed = _G.CombatValues.FrostSpeed or _G.CombatValues.StunSpeed end
+		elseif signalConnection == "EffectEnd" then
+			
+		end
+	end)
+end
+
+module.GiveDeepFreezeEffect = function(userKey, effectTime, name, info)
+	local bindableEvent = _G.Signal.new()
+	module.SetUpEffects(userKey)
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	local effects = module[userKey].Effects
+	local hum = _G.Tools.HumanoidExists(playerChar)
+	_G.CombatEffects.GiveStatusEffect(userKey, effectTime, "DeepFreeze", bindableEvent, {ResetTime = info.ResetTime})
+	bindableEvent.Invoked:Connect(function(signalConnection)
+		local humroot = playerChar:FindFirstChild("HumanoidRootPart")
+		if signalConnection == "EffectStart" then
+			if humroot then humroot.Anchored = true end
+		elseif signalConnection == "EffectApply" then
+			if humroot then humroot.Anchored = true end
+			if hum and not effects.Stun then hum.WalkSpeed = 0 end
+		elseif signalConnection == "EffectEnd" then
+			if humroot then humroot.Anchored = false end
+			if hum and not effects.Stun then hum.WalkSpeed = 16 end
+		end
+	end)
+end
+
+module.GiveMoveDuration = function(userKey, durationTime, name, bindableEvent, info)
+	module.SetUpEffects(userKey)
+	local effects = module[userKey].Effects
+	local playerChar = effects.PlayerChar or module.GetPlayerChar(userKey)
+	effects.PlayerChar = playerChar
+	if effects[name.."Duration"] == nil then warn("EffectName not found in effects table") return end
+	local counter = _G.Tools.SetCounterMeta()
+	local windupFinished = false
+	if not info then info = {} end
+	info.windupTime = info.windupTime or 0
+	info.stunDuring = info.stunDuring or false
+	info.stunOveride = info.stunOveride or false
+	info.iterations = info.iterations or 1
+	info.stopMove = info.stopMove or false
+	info.hyperArmor = info.hyperArmor or false
+	info.overRideHyper = info.overRideHyper or false
+	info.iFrameDuring = info.iFrameDuring or false
+	info.disableRotate = info.disableRotate or false
+	info.duringHyperDuration = info.duringHyperDuration or false
+	info.speed = info.speed or _G.CombatValues.StunSpeed
+	_G.Tools.CheckTimer(playerChar, name, true)
+	local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+	if timer["Timer"..name] and info.stopMove and (info.overRideHyper and true or not effects.HyperArmor) then
+		if info.victimHum then
+			_G.AnimationLoader.AnimationCanceler(info.victimHum.Parent)
+			_G.Equip.RemoveMoveWeld(info.victimHum.Parent, nil, "MoveOne")
+		end
+		timer["Timer"..name]:Stop()
+		module.GiveStun(userKey, 0.04, name.."Stun", {stunOveride = true, speed = info.speed})
+		if info.overRideHyper then effects.HyperArmor = false _G.Base:FireAllClients({type = "Highlight", subType = "Destroy", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "HyperArmor"}) end
+		local char = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character
+		if char and not effects.Grab and char:FindFirstChildWhichIsA("Humanoid") then char:FindFirstChildWhichIsA("Humanoid").AutoRotate = true end
+		effects[name.."Duration"] = false
+		timer["Timer"..name] = nil
+	end
+
+	if effects[name.."Duration"] == false and not info.stopMove then
+		if effects.HyperArmor then warn("Hyperarmor effect found before move start") return end
+		effects[name.."Duration"] = true
+		effects.HyperArmor = info.hyperArmor
+		
+		if info.disableRotate then
+			local char = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character
+			if char and not effects.Grab and char:FindFirstChildWhichIsA("Humanoid") then char:FindFirstChildWhichIsA("Humanoid").AutoRotate = false end
+		end
+		if effects.HyperArmor and not info.duringHyperDuration then
+			_G.Base:FireAllClients({type = "Highlight", subType = "Create", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "HyperArmor"})
+		end
+		_G.Tools.NewTimer({player = playerChar, name = name, time = info.windupTime + durationTime})
+		local _, timer = _G.Tools.RetrieveTimer({player = playerChar, name = name})
+		if info.stunDuring then module.GiveStun(userKey, (not info.speedDuration and (info.windupTime + durationTime) or info.windupTime), name.."Stun", {stunOveride = info.stunOveride, speed = info.speed}) end
+		if info.iFrameDuring then module.GiveIFrames(userKey, (info.windupTime + durationTime), "IFrames", {Overide = true}) end
+		counter.setValue(durationTime / info.iterations)
+		timer["Timer"..name].onCount.Invoked:Connect(function()
+			if timer["Timer"..name] then
+				if timer["Timer"..name].Difference <= info.windupTime then return end
+				if bindableEvent and not windupFinished then 
+					windupFinished = true
+					if info.duringHyperDuration then effects.HyperArmor = true _G.Base:FireAllClients({type = "Highlight", subType = "Create", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "HyperArmor"}) end
+					bindableEvent:Invoke("Windup") 
+				end
+				if timer["Timer"..name] then 
+					counter.add(timer["Timer"..name].Delta)
+					if counter.getValue() >= ((durationTime + timer["Timer"..name].Delta) / info.iterations) then
+						if bindableEvent then bindableEvent:Invoke("Iterated") end
+						counter.resetValue()
+					end
+				end
+			end
+		end)
+		timer["Timer"..name].Counted.Invoked:Connect(function()
+			if effects[name.."Duration"] == true then effects[name.."Duration"] = false end
+			if effects.HyperArmor then
+				_G.Base:FireAllClients({type = "Highlight", subType = "Destroy", owner = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character, name = "HyperArmor"})
+			end
+			effects.HyperArmor = false
+			local char = (playerChar:FindFirstChildWhichIsA("BasePart") and playerChar) or playerChar.Character
+			if char and not effects.Grab and char:FindFirstChildWhichIsA("Humanoid") then char:FindFirstChildWhichIsA("Humanoid").AutoRotate = true end
+			if bindableEvent then bindableEvent:Invoke("Finished") end
+			timer["Timer"..name] = nil
+		end)
+	end
+end
+
+module.SetTarget = function(player, userKey, dataType)
+	local effects = module[userKey].Effects
+	if dataType["target"] and dataType["target"]:FindFirstChildWhichIsA("Humanoid") and dataType["target"] ~= nil then effects.Target = dataType["target"] end
+end
+
+module.PlayDashAnimation = function(player, key)
+	local char = _G.Tools.ReturnCharacterIfPlayer(player)
+	if not char then warn("Char not found on dash animation call") return end
+	_G.AnimationLoader.Animate(char, key == "a" and "LeftDash" or key == "d" and "RightDash" or key == "s" and "BackDash", "Play")
+end
+
+module.SetDirection = function(player, userKey, key, remove)
+	if module[userKey] then
+		local effects = module[userKey].Effects
+		if not remove then
+			if not table.find(effects.DirectionalKeys, key) then table.insert(effects.DirectionalKeys, key) end
+		else
+			if table.find(effects.DirectionalKeys, key) then table.remove(effects.DirectionalKeys, table.find(effects.DirectionalKeys, key)) end
+		end
+		effects.Direction = effects.DirectionalKeys[1]
+	end
+end
+
+return module
