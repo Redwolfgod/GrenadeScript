@@ -1,0 +1,118 @@
+local module = {}
+
+module.MoveOne = function(player, char, userKey)
+	local hitStun = _G.CombatEffects[userKey].Effects["HitStun"]
+	local stun = _G.CombatEffects[userKey].Effects["Stun"]
+	local moveOneDuration = _G.CombatEffects[userKey].Effects["MoveOneDuration"]
+	local moveOneCooldown = _G.CombatEffects[userKey].Effects["MoveOneCooldown"]
+	local block = _G.CombatEffects[userKey].Effects["Block"]
+	local ragdoll = _G.CombatEffects[userKey].Effects["Ragdoll"]
+	if not stun and not moveOneDuration and not moveOneCooldown and not block and not ragdoll then
+		local signal = _G.Signal.new()
+		_G.CombatEffects.GiveMoveOneCooldown(userKey, _G.CombatValues.WindBombCooldown, "MoveOneCooldown")
+		_G.CombatEffects.GiveMoveDuration(userKey, _G.CombatValues.WindBombWindup, "MoveOne", signal, {stunDuring = true, speedDuration = false, stunOveride = true, speed = _G.CombatValues.WindBombStartupSpeed, hyperArmor = _G.CombatValues.WindBombHyperArmor})
+		_G.SFXHandler.PlaySoundEffect(char:FindFirstChildWhichIsA("BasePart"), "Windup")
+		_G.Base:FireAllClients({type = "CreateInterruptableVFX", subType = "Create", VFXName = "WindBomb", LifeTime = _G.CombatValues.WindBombWindup, Humanoid = char:FindFirstChildWhichIsA("Humanoid")})
+		_G.AnimationLoader.Animate(player.Character, "WindBombStartup", "Play")
+		_G.AnimationLoader.Animate(char, "WindBombStartup", "AdjustSpeed", _G.AnimationLoader[char]["WindBombStartup"].Length / (_G.CombatValues.WindBombWindup))
+		signal.Invoked:Connect(function(signalConnection)
+			if signalConnection == "Finished" then
+				local spawnCFrame = char:FindFirstChild("Right Arm").CFrame * CFrame.new(0,-1.6,0)
+				_G.Base:FireAllClients({type = "CreateSeperatedVFX", VFXName = "WindBombSpawned", LifeTime = _G.CombatValues.WindBombHoldTime, cframe = spawnCFrame})
+				_G.SFXHandler.PlaySoundEffect(char:FindFirstChildWhichIsA("BasePart"), "WindExplosionChargeup")
+				signal:Destroy()
+				_G.Promise.try(function()
+					_G.Promise.delay(_G.CombatValues.WindBombHoldTime):andThen(function()
+						
+						local partCacheOperation = 
+							
+							(_G.Promise.new(function(resolve, reject)
+								resolve(_G.PartCache.OperationParts:GetPart())
+								reject(_G.PartCache.GlobalTemplatePart:Clone())
+							end):andThen(function(passedPart)
+								passedPart.CFrame = spawnCFrame
+								_G.Promise.new(function(resolve, reject)
+									_G.SFXHandler.PlaySoundEffect(passedPart, "WindExplosion")
+								end):catch(function(err)
+									_G.SFXHandler.PlaySoundEffect(nil, "WindExplosion", {CreatePartAtCFrame = true})
+								end)
+								return _G.Promise.delay(_G.CombatValues.WindBombHoldTime)
+									:andThen(function()
+										_G.PartCache.OperationParts:ReturnPart(passedPart)
+									end):catch(function(err)
+										passedPart = nil
+										print("Passed Part Unable to be returned, destroying passed instance:", err)
+									end)
+								end))
+								
+						
+						local hitChars = _G.HitboxHandler.ProjectileHitboxer(player, spawnCFrame, Vector3.new(_G.CombatValues.WindBombRadius, _G.CombatValues.WindBombRadius, _G.CombatValues.WindBombRadius), game.Workspace.Debirs)
+						_G.Base:FireClient(player, {type = "ShakeScreen", subType = "WindExplosion", spawnTime = _G.CombatValues.WindBombScreenShakeTime})
+						if hitChars then
+							_G.DamageHandler.DamageSetup(player, hitChars, "WindBomb")
+							for _,character in pairs(hitChars) do
+								local player = _G.plrs:GetPlayerFromCharacter(character)
+								if player then _G.Base:FireClient(player, {type = "ShakeScreen", subType = "WindExplosion", spawnTime = _G.CombatValues.WindBombScreenShakeTime}) end
+							end
+						end
+						_G.Base:FireAllClients({type = "CreateSeperatedVFX", VFXName = "WindExplosion", cframe = spawnCFrame, LifeTime = _G.CombatValues.WindExplosionParticleLifeTime})
+					end)
+				end)
+			end
+		end)
+	end
+end
+
+
+module.MoveTwo = function(player, char, userKey)
+	local hitStun = _G.CombatEffects[userKey].Effects["HitStun"]
+	local stun = _G.CombatEffects[userKey].Effects["Stun"]
+	local moveTwoDuration = _G.CombatEffects[userKey].Effects["MoveTwoDuration"]
+	local moveTwoCooldown = _G.CombatEffects[userKey].Effects["MoveTwoCooldown"]
+	local block = _G.CombatEffects[userKey].Effects["Block"]
+	local ragdoll = _G.CombatEffects[userKey].Effects["Ragdoll"]
+	if not hitStun and not stun and not moveTwoDuration and not moveTwoCooldown and not block and not ragdoll then
+		local signal = _G.Signal.new()
+		_G.CombatEffects.GiveMoveTwoCooldown(userKey, _G.CombatValues.WindDashCooldown, "MoveTwoCooldown")
+		_G.CombatEffects.GiveMoveDuration(userKey, _G.CombatValues.WindDashDuration, "MoveTwo", signal, {windupTime = _G.CombatValues.WindDashWindup, stunDuring = true, stunOveride = true, speed = _G.CombatValues.WindDashStartupSpeed, hyperArmor = _G.CombatValues.WindDashHyperArmor, iterations = _G.CombatValues.WindDashIterations})
+		_G.SFXHandler.PlaySoundEffect(char:FindFirstChildWhichIsA("BasePart"), "Windup")
+		_G.AnimationLoader.Animate(char, "WindDash", "Play")
+		_G.AnimationLoader.Animate(char, "WindDash", "AdjustSpeed", _G.AnimationLoader[char]["WindDash"].Length / (_G.CombatValues.WindDashWindup + _G.CombatValues.WindDashDuration + 1))
+		signal.Invoked:Connect(function(signalConnection)
+			if signalConnection == "Iterated" then
+				local hitChars, hitbox = _G.HitboxHandler.HitHandler(player, userKey, {length = _G.CombatValues.WindDashRadius, height = _G.CombatValues.WindDashRadius, width = _G.CombatValues.WindDashRadius, origin = char["HumanoidRootPart"].CFrame, SpawnOnObject = char["HumanoidRootPart"], Shape = "Ball", user = char})
+				if hitChars then
+					_G.DamageHandler.DamageSetup(player, hitChars, "WindDash")
+				end
+			elseif signalConnection == "Windup" then
+				_G.Base:FireAllClients({type = "CreateInterruptableVFX", subType = "Create", VFXName = "WindCrit", LifeTime = _G.CombatValues.WindDashMaxLifeTime, Humanoid = char:FindFirstChildWhichIsA("Humanoid")})
+				_G.Base:FireClient(player, {type = "MovementHandler", subType = "SkillMovement", char = char, duration = _G.CombatValues.WindDashDuration, distance = _G.CombatValues.WindDashDistance})
+				task.delay(0.3, function() _G.Base:FireAllClients({type = "CreateInterruptableVFX", subType = "Destroy", VFXName = "WindCrit", Humanoid = char:FindFirstChildWhichIsA("Humanoid")}) end)
+			elseif signalConnection == "Finished" then
+				signal = nil;
+			end
+		end)
+	end
+end
+
+module.Crit = function(player, char, userKey, additionalInfo)
+	local signal = _G.Signal.new()
+	_G.CombatEffects.GiveMoveMagicCritCooldown(userKey, _G.CombatValues.WindCritCooldown, "MoveMagicCritCooldown")
+	_G.SFXHandler.PlaySoundEffect(char:FindFirstChildWhichIsA("BasePart"), "Windup")
+	_G.AnimationLoader.Animate(player.Character, "WaterWave", "Play")
+	_G.AnimationLoader.Animate(char, "WaterWave", "AdjustSpeed", _G.AnimationLoader[char]["WaterWave"].Length / ((_G.CombatValues.WindCritWindup)/_G.CombatValues.WindCritAnimationAdjustmentValue))
+	signal.Invoked:Connect(function(signalConnection)
+		if signalConnection == "Finished" then
+			local hitChars, hitbox = _G.HitboxHandler.HitHandler(player, userKey, {length = _G.CombatValues.WindCritHitboxLength, height = _G.CombatValues.WindCritHitboxHeight, width = _G.CombatValues.WindCritHitboxWidth, origin = char.HumanoidRootPart.CFrame, user = char})
+			if hitChars then
+				_G.DamageHandler.DamageSetup(player, hitChars, "CritWind")
+			end
+			_G.Base:FireAllClients({type = "CreateSeperatedVFX", VFXName = "WindCritNewer", cframe = char:FindFirstChild("HumanoidRootPart").CFrame * CFrame.new(0,0,-_G.CombatValues.WindCritHitboxLength/2), LifeTime = _G.CombatValues.WindCritParticleLifeTime})
+			signal = nil;
+			if char:FindFirstChild("HumanoidRootPart") then char:FindFirstChild("HumanoidRootPart").CFrame *= CFrame.new(0,0,-_G.rep.VFXParts.Wind.WindCrit.Size.X * 2) end
+		end
+	end)
+	_G.CombatEffects.GiveMoveDuration(userKey, _G.CombatValues.WindCritWindup, "MoveMagicCrit", signal, {stunDuring = true, stunOveride = true, speed = _G.CombatValues.WindCritStartupSpeed, hyperArmor = _G.CombatValues.WindCritHyperArmor})
+end
+
+return module
