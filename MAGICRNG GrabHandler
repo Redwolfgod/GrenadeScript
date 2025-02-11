@@ -11,6 +11,21 @@ Grab.__add = function(self, tableNew) : table
 	return self
 end
 
+local sss = game:GetService("ServerScriptService")
+local plrs = game:GetService("Players")
+local cs = sss.Main.CombatScripts
+local tools = sss.Main.Tools
+
+local Tools = require(sss.Main.Tools)
+local AnimationLoader = require(sss.Main.AnimationLoader)
+local CombatEffects = require(cs.CombatEffects)
+local PartCache = require(tools.PartCache)
+local Promise = require(tools.Promise)
+local Trove = require(tools.Trove)
+local GrabTypes = require(script.GrabTypes)
+local DamageHandler = require(cs.DamageHandler)
+
+
 type infoTable = {
 	Anchor : boolean,
 	ApplyBoth : boolean,
@@ -21,71 +36,85 @@ type infoTable = {
 	OverideIFrames : boolean,
 }
 
+--Warn messages
 local effectWarn = "Ending grab due to no effects found:"
 local noKeyWarn = "Key not found in metatable, please make sure to pass it"
 local grabDefault = "Grab type not found, default to basic"
 local invalidKeyWarning = "Grab key not found, are you sure this has a key?"
 
-Grab.SetupMotor = function(MainChar, OtherChar)
+Grab.SetupMotor = function(MainChar, OtherChar) --Sets up the grab motor based on the passed characters
 	local mainRoot = MainChar:FindFirstChild("HumanoidRootPart")
 	local otherRoot = OtherChar:FindFirstChild("HumanoidRootPart")
 	if not mainRoot or not otherRoot then warn("Roots not found on motor setup for grab") return end
+	--Checks if the roots exist for each character, stops operation if not found
 
 	local mainHumanoid = MainChar:FindFirstChildOfClass("Humanoid")
 	local otherHumanoid = OtherChar:FindFirstChildOfClass("Humanoid")
 	if not mainHumanoid or not otherHumanoid then warn("Humanoids not found on motor setup for grab") return end
+	--Checks if the humanoids exist for each character, stops operation if not found
 
-	local motorContainer = _G.PartCache.GrabMotors:GetPart()
+	local motorContainer = PartCache.GrabMotors:GetPart()
 	local motor = motorContainer:FindFirstChildWhichIsA("Motor6D")
 	if not motor then warn("Motor not found on grab motor create") return end
+	--Gets the motor from the part cache, stops operation if its not found
 
 	motor.Part0 = mainRoot
 	motor.Part1 = otherRoot
+	--Assigns the motor parts
 	return motor
 end
 
-function Grab:RemoveMotor()
+function Grab:RemoveMotor() --Called when operation ends to clean up the motors and return it to the partcache
 	if self.Motor then
 		self.Motor.Part0 = nil
 		self.Motor.Part1 = nil
-		_G.PartCache.GrabMotors:ReturnPart(self.Motor.Parent)
+		--Unassigns the motors
+		PartCache.GrabMotors:ReturnPart(self.Motor.Parent)
+		--Returns to cache of parts containing motors
 	end
 end
 
-function Grab:ReturnEffects()
+function Grab:ReturnEffects() --Finds the players combat effects in the combat effects script
 	local effectsTable = {}
 	for name, value in next, self do
-		if string.find(name, "Char") then
-			--This condition is so already established grab characters arent iterated over a second time
-			if not self._ChrReferenceTable[name] and not effectsTable[name] then
+		if not string.find(name, "Char") then continue end
+		--loops the metatable for objects that have Char in them, this was originally going to be a multichar grab script
 
-				local keyCharValue = string.gsub(name, "Char", "Key")
+		if self._ChrReferenceTable[name] --[[ During this operation it stores the char value in metatable to prevent calling function again ]] or effectsTable[name] --[[ Checks to for Deduplication ]] then continue end
+			
+			
+		local keyCharValue = string.gsub(name, "Char", "Key")
 
-				if not self[keyCharValue] then warn(noKeyWarn, keyCharValue) return end
-				if not _G.CombatEffects[self[keyCharValue]] then warn("EffectTable not found on call for key:", self[keyCharValue]) return end
+		if not self[keyCharValue] then warn(noKeyWarn, keyCharValue) return end
+		--Checks for key value in metatable, throws warning if none
+		
+		if not CombatEffects[self[keyCharValue]] then warn("EffectTable not found on call for key:", self[keyCharValue]) return end
+		--Checks if key value from metatable exists in the combat system
+		self._ChrReferenceTable[name] = value
+		--Creates a reference based on the name of the character in the metatable
 
-				self._ChrReferenceTable[name] = value
-
-				effectsTable[name] = _G.CombatEffects[self[keyCharValue]].Effects
-			end
-		end
+		effectsTable[name] = CombatEffects[self[keyCharValue]].Effects
+		--Creates a reference based on character name to them in the combat system
 	end
 
 	return effectsTable
 end
 
 Grab.ValidateExistence = function(MainChar : Model, OtherChar : Model) : number
-	local key = _G.plrs:GetPlayerFromCharacter(MainChar).UserId or MainChar:GetAttribute("NPCID") :: string
+	local key = plrs:GetPlayerFromCharacter(MainChar).UserId or MainChar:GetAttribute("NPCID") :: string
 	if Grab.Holder[key] then return key end 
+	--Validates wether grabbed character is a player or NPC
 end
 
 Grab.CreateGrabTable = function(MainChar : Model, OtherChar : Model, MaxSlots : number) : table
 	local foundKey = Grab.ValidateExistence(MainChar, OtherChar) :: number
 	if foundKey and getmetatable(Grab.Holder[foundKey]) then return end
+	--Checks if the grab operation is already running for the user with that key
+	
 	local startMeta = setmetatable({
 		MainChar = MainChar;
-		MainKey = _G.Tools.GetUserId(MainChar);
-		Trove = _G.Trove.new();
+		MainKey = Tools.GetUserId(MainChar);
+		trove = Trove.new();
 		Properties = {};
 		EffectSaves = {};
 		Listeners = {};
@@ -98,10 +127,11 @@ Grab.CreateGrabTable = function(MainChar : Model, OtherChar : Model, MaxSlots : 
 	if OtherChar then
 		local CharSlot = {
 			OtherChar = OtherChar;
-			OtherKey = _G.Tools.GetUserId(OtherChar);
+			OtherKey = Tools.GetUserId(OtherChar);
 			Motor = Grab.SetupMotor(MainChar, OtherChar);
 		}
 		startMeta = startMeta + CharSlot
+		--Adds another character if specified, making it not a self grab
 	end
 
 	return startMeta
@@ -111,7 +141,8 @@ function Grab:ApplyType(info : infoTable?)
 	if not info.GrabType then warn(grabDefault) return end
 	for name, character in next, self._ChrReferenceTable do
 		--Checks if their name has main or not to find if they are an attacker or victim
-		self.TypeInfo[name] = _G.GrabTypes.ReturnTypeInfo(info.GrabType :: string, string.find(name, "Main") :: boolean, self) :: table
+		self.TypeInfo[name] = GrabTypes.ReturnTypeInfo(info.GrabType :: string, string.find(name, "Main") :: boolean, self) :: table
+		--Returns what type of grab it is
 	end
 
 	self:ExecuteTypeInfo()
@@ -119,14 +150,17 @@ end
 
 function Grab:ExecuteTypeInfo()
 	for CharName, TypeInfo in next, self.TypeInfo do
-		_G.Promise.try(function()
-			_G.AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "Play")
+		--Based on the passed name into the grab, it will find specific characteristics and apply them to every character in the reference table
+		
+		Promise.try(function()
+			AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "Play")
 			if TypeInfo.AnimationAdjustment then
-				_G.AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "AdjustSpeed", _G.AnimationLoader[self._ChrReferenceTable[CharName]][TypeInfo.Animation].Length * TypeInfo.AnimationAdjustment)
+				AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "AdjustSpeed", AnimationLoader[self._ChrReferenceTable[CharName]][TypeInfo.Animation].Length * TypeInfo.AnimationAdjustment)
 			end
 
 			if typeof(TypeInfo.DamageTypeInfo) ~= "boolean" then
 				self._CancelSignals[CharName] = TypeInfo.DamageTypeInfo.CancelSignal
+				--A cancel signal that gets created for the asynchronous damage operation, called when the grab gets cancelled
 			end
 
 			self.Motor.C0 = TypeInfo.C0Offset
@@ -134,9 +168,11 @@ function Grab:ExecuteTypeInfo()
 			self.Motor.C1 = TypeInfo.C1Offset
 
 			if TypeInfo.DamageType then
-				_G.DamageHandler.DamageSetup(self._ChrReferenceTable["MainChar"] or self._ChrReferenceTable[CharName], {self._ChrReferenceTable[CharName]}, "Ravage", TypeInfo.DamageTypeInfo)
+				DamageHandler.DamageSetup(self._ChrReferenceTable["MainChar"] or self._ChrReferenceTable[CharName], {self._ChrReferenceTable[CharName]}, "Ravage", TypeInfo.DamageTypeInfo)
 			end
+			--If grab typeinfo says theres a damage function, it will pass it into the damage handler to apply damage to the character, this process is very asynchronous
 		end)
+		--Asynchronously runs applying the grab type specifications, as they can take a bit of time
 	end
 end
 
@@ -144,24 +180,26 @@ function Grab:StopTypeInfo()
 	for name, signal in next, self._CancelSignals do
 		if signal then signal:Invoke() end
 	end
+	--Cancels all damage events created from the typeinfo handler
 
 	for CharName, TypeInfo in next, self.TypeInfo do
-		_G.Promise.try(function()
-			if not self._ChrReferenceTable[CharName]:FindFirstChildWhichIsA("Humanoid") then return end
-			if not self._ChrReferenceTable[CharName]:FindFirstChild("HumanoidRootPart") then return end
+		if not self._ChrReferenceTable[CharName]:FindFirstChildWhichIsA("Humanoid") then return end
+		if not self._ChrReferenceTable[CharName]:FindFirstChild("HumanoidRootPart") then return end
 
-			_G.AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "Stop")
-		end)
+		AnimationLoader.Animate(self._ChrReferenceTable[CharName], TypeInfo.Animation, "Stop")
 	end
 end
 
 function Grab:ApplyEffects(info : infoTable?)
 	for _, effectTable in next, self._EffectTableReferences do
 		effectTable.Grab = true
+		--Applies grab to their combat effects
 
 		if info.IFrames then
 			self.EffectSaves["IFrames"] = true
+			--Loads value into EffectSaves as the end operation, as the infoTable is not stored in metatable
 			effectTable.IFrames = true
+			--Applies IFrames to character iterated depending on if specified
 		end
 	end
 end
@@ -169,22 +207,32 @@ end
 function Grab:RemoveEffects()
 	for _, effectTable in next, self._EffectTableReferences do
 		effectTable.Grab = false
+		--Disables the grab from combat effects
 
 		if self.EffectSaves["IFrames"] then
+			--Loops the effectSaves table in the metatable
 			effectTable.IFrames = false
+			--Disables IFrames for character iterated depending on if specified
 		end
 	end
 end
 
 function Grab:ChecksConditions(info : infoTable?) 
 	local foundEffects = self:ReturnEffects() :: table
+	--Returns the found combat effects based on the passed characters
 	if not foundEffects then warn(effectWarn, foundEffects) self:GrabStop() return end
+	--Grab needs combat effects to properly work, otherwise it cancels
+	
 	for _, effectTable in next, foundEffects do
 		if effectTable.Ragdoll then return end
 		if not info.OverideHyper and effectTable.HyperArmor then return end
+		--If grab is not supposed to overide hyperarmor and one of the characters has hyperarmor, cancel the grab
 		if not info.OverideIFrames and effectTable.IFrames then return end
+		--If grab is not supposed to overide iframes and one of the characters has iframes, cancel the grab
+
 
 		table.insert(self._EffectTableReferences, effectTable)
+		--Inserts the effectTable into the referencer for later usage
 	end
 
 	return true
@@ -192,38 +240,42 @@ end
 
 function Grab:ModifyProperties(info : infoTable?)
 	for charName, charModel in next, self._ChrReferenceTable do
-		if not info.ApplyBoth and string.find(charName, "MainChar") or true then
-			self:EstablishListeners(charModel, info)
+		self:EstablishListeners(charModel, info)
+		--Sets up the listeners for the charModel, which can cancel the operation depending on the character state
+		
+		--Creates a properties table for each character, which can be unassigned later
+		self.Properties[charName] = {}
 
-			self.Properties[charName] = {}
+		if not string.find(charName, "MainChar") then 
+			charModel.Humanoid.EvaluateStateMachine = false
+			self.Properties[charName]["EvaluateStateMachine"] = true
+		end
 
-			if not string.find(charName, "MainChar") then 
-				charModel.Humanoid.EvaluateStateMachine = false
-				self.Properties[charName]["EvaluateStateMachine"] = true
+		--Defers to prevent anchoring or rotation disabling before weld application
+		Promise.defer(function()
+			if info.Anchor then
+				if not string.find(charName, "MainChar") then return end
+				charModel.HumanoidRootPart.Anchored = true
+				self.Properties[charName]["Anchor"] = true
+				--Amchors the mainchar if specified stationary grab
 			end
 
-			_G.Promise.defer(function()
-				if info.Anchor then
-					if string.find(charName, "MainChar") then
-						charModel.HumanoidRootPart.Anchored = true
-						self.Properties[charName]["Anchor"] = true
-					end
-				end
-
-				if info.NoRotate then
-					charModel.Humanoid.AutoRotate = false 
-					self.Properties[charName]["NoRotate"] = true
-				end
-			end)
-		end
+			if info.NoRotate then
+				charModel.Humanoid.AutoRotate = false 
+				self.Properties[charName]["NoRotate"] = true
+				--Disables rotation for all characters if specified
+			end
+		end)
 	end
 end
 
 function Grab:RemoveProperties()	
 	for charName, charModel in next, self._ChrReferenceTable do
-		if not self.Properties[charName] then return end
-
-		_G.Promise.try(function()
+		if not self.Properties[charName] then continue end
+		--If no setup properties, ignore the character
+		
+		--Asynchronously unassigns properties to allow for faster iteration
+		Promise.try(function()
 			if not charModel:FindFirstChildWhichIsA("Humanoid") then return end
 
 			if self.Properties[charName]["EvaluateStateMachine"] then
@@ -234,8 +286,9 @@ function Grab:RemoveProperties()
 				charModel.Humanoid.AutoRotate = true
 			end
 		end)
+		--Seperated promises in the case either a humanoid or humanoidrootpart becomes displaced during the operation 
 
-		_G.Promise.try(function()
+		Promise.try(function()
 			if not charModel:FindFirstChild("HumanoidRootPart") then return end
 
 			if self.Properties[charName]["Anchor"] then
@@ -249,35 +302,45 @@ end
 
 function Grab:EstablishListeners(Character: Model, info : infoTable?)
 	local hum = Character.Humanoid :: Humanoid
-	_G.Promise.each({
+	--Runs through the model allowing for multiple promises to be stored in the trove
+	Promise.each({
 		Character.AncestryChanged,
 		Character.HumanoidRootPart.Destroying,
 		Character.Humanoid.Destroying,
 	}, function(connection, index)
-		self.Trove:AddPromise(_G.Promise.fromEvent(connection, function(part)
+		self.trove:AddPromise(Promise.fromEvent(connection, function(part)
 			self._GrabPromise:cancel()
-			return false --false means it will continue while true means it stops
+			--Cancels the operation, which cancels the trove halting all the promises
+			return false --Gets cleaned up anyways, extra safety incase a fail occurs
 		end))
 	end)
 end
 
-Grab.GrabStart = function(MainChar, duration, OtherChar, info : infoTable?)
+Grab.GrabStart = function(MainChar, duration, OtherChar, info : infoTable?) --The main operation 
+	--Checks if the passed info is right before starting the operation
 	if not MainChar then warn("Please pass at minimum MainChar into grab function") return end
 	if not duration or typeof(duration) ~= "number" then warn("Duration not properly passed") return end
-
+	
+	--Creates an info table if not passed
 	if not info then info = {} end
 
-	local grabTable = Grab.CreateGrabTable(MainChar, OtherChar, MaxSlots)
+	local grabTable = Grab.CreateGrabTable(MainChar, OtherChar)
+	--Sets up the metatable
 	if not grabTable then return end
+	--if something fails in the creation process halts the operation, as the metatable doesn't get creatd
 	if not grabTable:ChecksConditions(info) then return end
+	--Stops operation if the combat effects are not found 
 
 	Grab.Holder[grabTable.MainKey] = grabTable
+	--Stores it in the module
 
 	grabTable:ApplyEffects(info)
 	grabTable:ApplyType(info)
 	grabTable:ModifyProperties(info)
-	grabTable._GrabPromise = _G.Promise.delay(duration):finally(function()
+	--Applies the grab related operations
+	grabTable._GrabPromise = Promise.delay(duration):finally(function()
 		grabTable:GrabStop()
+		--After a certain amount of time the grab will stop based on the passed duration
 	end)
 end
 
@@ -287,9 +350,10 @@ function Grab:GrabStop()
 	self:RemoveProperties()
 	self:RemoveEffects()
 	self:StopTypeInfo()
-	self.Trove:Clean()
+	self.trove:Clean()
 	setmetatable(self, nil)
 	self = nil
+	--Removes the metatable
 end
 
 return Grab
